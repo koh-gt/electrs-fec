@@ -30,7 +30,7 @@ impl Waiter {
         Waiter {
             receiver: notify(&[
                 SIGINT, SIGTERM,
-                SIGUSR1, // allow external triggering (e.g. via bitcoind `blocknotify`)
+                SIGUSR1, // allow external triggering (e.g. via litecoind `blocknotify`)
             ]),
         }
     }

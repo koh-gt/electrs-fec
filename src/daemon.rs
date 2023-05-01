@@ -11,10 +11,7 @@ use glob;
 use hex;
 use serde_json::{from_str, from_value, Value};
 
-#[cfg(not(feature = "liquid"))]
 use bitcoin::consensus::encode::{deserialize, serialize};
-#[cfg(feature = "liquid")]
-use elements::encode::{deserialize, serialize};
 
 use crate::chain::{Block, BlockHash, BlockHeader, Network, Transaction, Txid};
 use crate::metrics::{HistogramOpts, HistogramVec, Metrics};
@@ -292,11 +289,11 @@ impl Daemon {
             message_id: Counter::new(),
             signal: signal.clone(),
             latency: metrics.histogram_vec(
-                HistogramOpts::new("daemon_rpc", "Bitcoind RPC latency (in seconds)"),
+                HistogramOpts::new("daemon_rpc", "Litecoind RPC latency (in seconds)"),
                 &["method"],
             ),
             size: metrics.histogram_vec(
-                HistogramOpts::new("daemon_bytes", "Bitcoind RPC size (in bytes)"),
+                HistogramOpts::new("daemon_bytes", "Litecoind RPC size (in bytes)"),
                 &["method", "dir"],
             ),
         };
@@ -304,14 +301,14 @@ impl Daemon {
         info!("{:?}", network_info);
         if network_info.version < 16_00_00 {
             bail!(
-                "{} is not supported - please use bitcoind 0.16+",
+                "{} is not supported - please use litecoind 0.16+",
                 network_info.subversion,
             )
         }
         let blockchain_info = daemon.getblockchaininfo()?;
         info!("{:?}", blockchain_info);
         if blockchain_info.pruned {
-            bail!("pruned node is not supported (use '-prune=0' bitcoind flag)".to_owned())
+            bail!("pruned node is not supported (use '-prune=0' litecoind flag)".to_owned())
         }
         loop {
             let info = daemon.getblockchaininfo()?;
@@ -321,7 +318,7 @@ impl Daemon {
             }
 
             warn!(
-                "waiting for bitcoind sync to finish: {}/{} blocks, verification progress: {:.3}%",
+                "waiting for litecoind sync to finish: {}/{} blocks, verification progress: {:.3}%",
                 info.blocks,
                 info.headers,
                 info.verificationprogress * 100.0
@@ -397,7 +394,7 @@ impl Daemon {
         loop {
             match self.handle_request_batch(method, params_list) {
                 Err(Error(ErrorKind::Connection(msg), _)) => {
-                    warn!("reconnecting to bitcoind: {}", msg);
+                    warn!("reconnecting to litecoind: {}", msg);
                     self.signal.wait(Duration::from_secs(3), false)?;
                     let mut conn = self.conn.lock().unwrap();
                     *conn = conn.reconnect()?;
@@ -418,7 +415,7 @@ impl Daemon {
         self.retry_request_batch(method, params_list)
     }
 
-    // bitcoind JSONRPC API:
+    // litecoind JSONRPC API:
 
     pub fn getblockchaininfo(&self) -> Result<BlockchainInfo> {
         let info: Value = self.request("getblockchaininfo", json!([]))?;

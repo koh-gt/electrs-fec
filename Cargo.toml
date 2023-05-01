@@ -6,14 +6,13 @@ description = "An efficient re-implementation of Electrum Server in Rust"
 license = "MIT"
 homepage = "https://github.com/romanz/electrs"
 repository = "https://github.com/romanz/electrs"
-keywords = ["bitcoin", "electrum", "server", "index", "database"]
+keywords = ["litecoin", "electrum", "server", "index", "database"]
 documentation = "https://docs.rs/electrs/"
 readme = "README.md"
 edition = "2018"
 
 [features]
 default = [ "rocksdb" ]
-liquid = [ "elements" ]
 electrum-discovery = [ "electrum-client"]
 oldcpu = [ "rocksdb-oldcpu" ]
 
@@ -22,11 +21,9 @@ arraydeque = "0.4"
 arrayref = "0.3.6"
 base64 = "0.13.0"
 bincode = "1.3.1"
-bitcoin = { version = "0.28", features = [ "use-serde" ] }
 clap = "2.33.3"
 crossbeam-channel = "0.5.0"
 dirs = "4.0.0"
-elements = { version = "0.19.1", features = [ "serde-feature" ], optional = true }
 error-chain = "0.12.4"
 glob = "0.3"
 hex = "0.4.2"
@@ -59,6 +56,10 @@ tokio = { version = "1", features = ["sync", "macros"] }
 # optional dependencies for electrum-discovery
 electrum-client = { version = "0.8", optional = true }
 
+[dependencies.bitcoin]
+version = "0.28"
+features = [ "use-serde" ]
+path = "../rust-bitcoin"
 
 [dev-dependencies]
 tempfile = "3.0"

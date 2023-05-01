@@ -1,5 +1,4 @@
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
-#[cfg(not(feature = "liquid"))]
 use bitcoin::util::merkleblock::MerkleBlock;
 use bitcoin::VarInt;
 use crypto::digest::Digest;
@@ -7,13 +6,7 @@ use crypto::sha2::Sha256;
 use itertools::Itertools;
 use rayon::prelude::*;
 
-#[cfg(not(feature = "liquid"))]
 use bitcoin::consensus::encode::{deserialize, serialize};
-#[cfg(feature = "liquid")]
-use elements::{
-    encode::{deserialize, serialize},
-    AssetId,
-};
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
@@ -33,9 +26,6 @@ use crate::util::{
 
 use crate::new_index::db::{DBFlush, DBRow, ReverseScanIterator, ScanIterator, DB};
 use crate::new_index::fetch::{start_fetcher, BlockEntry, FetchFrom};
-
-#[cfg(feature = "liquid")]
-use crate::elements::{asset, peg};
 
 const MIN_HISTORY_ITEMS_TO_CACHE: usize = 100;
 
@@ -109,13 +99,6 @@ pub struct Utxo {
     pub vout: u32,
     pub confirmed: Option<BlockId>,
     pub value: Value,
-
-    #[cfg(feature = "liquid")]
-    pub asset: elements::confidential::Asset,
-    #[cfg(feature = "liquid")]
-    pub nonce: elements::confidential::Nonce,
-    #[cfg(feature = "liquid")]
-    pub witness: elements::TxOutWitness,
 }
 
 impl From<&Utxo> for OutPoint {
@@ -139,9 +122,7 @@ pub struct ScriptStats {
     pub tx_count: usize,
     pub funded_txo_count: usize,
     pub spent_txo_count: usize,
-    #[cfg(not(feature = "liquid"))]
     pub funded_txo_sum: u64,
-    #[cfg(not(feature = "liquid"))]
     pub spent_txo_sum: u64,
 }
 
@@ -151,9 +132,7 @@ impl ScriptStats {
             tx_count: 0,
             funded_txo_count: 0,
             spent_txo_count: 0,
-            #[cfg(not(feature = "liquid"))]
             funded_txo_sum: 0,
-            #[cfg(not(feature = "liquid"))]
             spent_txo_sum: 0,
         }
     }
@@ -173,8 +152,6 @@ struct IndexerConfig {
     address_search: bool,
     index_unspendables: bool,
     network: Network,
-    #[cfg(feature = "liquid")]
-    parent_network: crate::chain::BNetwork,
 }
 
 impl From<&Config> for IndexerConfig {
@@ -184,8 +161,6 @@ impl From<&Config> for IndexerConfig {
             address_search: config.address_search,
             index_unspendables: config.index_unspendables,
             network: config.network_type,
-            #[cfg(feature = "liquid")]
-            parent_network: config.parent_network,
         }
     }
 }
@@ -555,24 +530,11 @@ impl ChainQuery {
         Ok(newutxos
             .into_iter()
             .map(|(outpoint, (blockid, value))| {
-                // in elements/liquid chains, we have to lookup the txo in order to get its
-                // associated asset. the asset information could be kept in the db history rows
-                // alongside the value to avoid this.
-                #[cfg(feature = "liquid")]
-                let txo = self.lookup_txo(&outpoint).expect("missing utxo");
-
                 Utxo {
                     txid: outpoint.txid,
                     vout: outpoint.vout,
                     value,
                     confirmed: Some(blockid),
-
-                    #[cfg(feature = "liquid")]
-                    asset: txo.asset,
-                    #[cfg(feature = "liquid")]
-                    nonce: txo.nonce,
-                    #[cfg(feature = "liquid")]
-                    witness: txo.witness,
                 }
             })
             .collect())
@@ -607,11 +569,6 @@ impl ChainQuery {
                     utxos.insert(history.get_funded_outpoint(), (blockid, info.value))
                 }
                 TxHistoryInfo::Spending(_) => utxos.remove(&history.get_funded_outpoint()),
-                #[cfg(feature = "liquid")]
-                TxHistoryInfo::Issuing(_)
-                | TxHistoryInfo::Burning(_)
-                | TxHistoryInfo::Pegin(_)
-                | TxHistoryInfo::Pegout(_) => unreachable!(),
             };
 
             // abort if the utxo set size excedees the limit at any point in time
@@ -686,33 +643,15 @@ impl ChainQuery {
             }
 
             match history.key.txinfo {
-                #[cfg(not(feature = "liquid"))]
                 TxHistoryInfo::Funding(ref info) => {
                     stats.funded_txo_count += 1;
                     stats.funded_txo_sum += info.value;
                 }
 
-                #[cfg(not(feature = "liquid"))]
                 TxHistoryInfo::Spending(ref info) => {
                     stats.spent_txo_count += 1;
                     stats.spent_txo_sum += info.value;
                 }
-
-                #[cfg(feature = "liquid")]
-                TxHistoryInfo::Funding(_) => {
-                    stats.funded_txo_count += 1;
-                }
-
-                #[cfg(feature = "liquid")]
-                TxHistoryInfo::Spending(_) => {
-                    stats.spent_txo_count += 1;
-                }
-
-                #[cfg(feature = "liquid")]
-                TxHistoryInfo::Issuing(_)
-                | TxHistoryInfo::Burning(_)
-                | TxHistoryInfo::Pegin(_)
-                | TxHistoryInfo::Pegout(_) => unreachable!(),
             }
 
             lastblock = Some(blockid.hash);
@@ -909,7 +848,6 @@ impl ChainQuery {
             })
     }
 
-    #[cfg(not(feature = "liquid"))]
     pub fn get_merkleblock_proof(&self, txid: &Txid) -> Option<MerkleBlock> {
         let _timer = self.start_timer("get_merkleblock_proof");
         let blockid = self.tx_confirming_block(txid)?;
@@ -921,21 +859,6 @@ impl ChainQuery {
             &block_txids,
             |t| t == txid,
         ))
-    }
-
-    #[cfg(feature = "liquid")]
-    pub fn asset_history(
-        &self,
-        asset_id: &AssetId,
-        last_seen_txid: Option<&Txid>,
-        limit: usize,
-    ) -> Vec<(Transaction, BlockId)> {
-        self._history(b'I', &asset_id.into_inner()[..], last_seen_txid, limit)
-    }
-
-    #[cfg(feature = "liquid")]
-    pub fn asset_history_txids(&self, asset_id: &AssetId, limit: usize) -> Vec<(Txid, BlockId)> {
-        self._history_txids(b'I', &asset_id.into_inner()[..], limit)
     }
 }
 
@@ -1138,16 +1061,6 @@ fn index_transaction(
         );
         rows.push(edge.into_row());
     }
-
-    // Index issued assets & native asset pegins/pegouts/burns
-    #[cfg(feature = "liquid")]
-    asset::index_confirmed_tx_assets(
-        tx,
-        confirmed_height,
-        iconfig.network,
-        iconfig.parent_network,
-        rows,
-    );
 }
 
 fn addr_search_row(spk: &Script, network: Network) -> Option<DBRow> {
@@ -1384,15 +1297,6 @@ pub struct SpendingInfo {
 pub enum TxHistoryInfo {
     Funding(FundingInfo),
     Spending(SpendingInfo),
-
-    #[cfg(feature = "liquid")]
-    Issuing(asset::IssuingInfo),
-    #[cfg(feature = "liquid")]
-    Burning(asset::BurningInfo),
-    #[cfg(feature = "liquid")]
-    Pegin(peg::PeginInfo),
-    #[cfg(feature = "liquid")]
-    Pegout(peg::PegoutInfo),
 }
 
 impl TxHistoryInfo {
@@ -1400,12 +1304,6 @@ impl TxHistoryInfo {
         match self {
             TxHistoryInfo::Funding(FundingInfo { txid, .. })
             | TxHistoryInfo::Spending(SpendingInfo { txid, .. }) => deserialize(txid),
-
-            #[cfg(feature = "liquid")]
-            TxHistoryInfo::Issuing(asset::IssuingInfo { txid, .. })
-            | TxHistoryInfo::Burning(asset::BurningInfo { txid, .. })
-            | TxHistoryInfo::Pegin(peg::PeginInfo { txid, .. })
-            | TxHistoryInfo::Pegout(peg::PegoutInfo { txid, .. }) => deserialize(txid),
         }
         .expect("cannot parse Txid")
     }
@@ -1485,11 +1383,6 @@ impl TxHistoryInfo {
                 txid: deserialize(&info.prev_txid).unwrap(),
                 vout: info.prev_vout as u32,
             },
-            #[cfg(feature = "liquid")]
-            TxHistoryInfo::Issuing(_)
-            | TxHistoryInfo::Burning(_)
-            | TxHistoryInfo::Pegin(_)
-            | TxHistoryInfo::Pegout(_) => unreachable!(),
         }
     }
 }

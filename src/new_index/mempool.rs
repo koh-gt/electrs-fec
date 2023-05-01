@@ -1,10 +1,7 @@
 use arraydeque::{ArrayDeque, Wrapping};
 use itertools::Itertools;
 
-#[cfg(not(feature = "liquid"))]
 use bitcoin::consensus::encode::serialize;
-#[cfg(feature = "liquid")]
-use elements::{encode::serialize, AssetId};
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::iter::FromIterator;
@@ -23,9 +20,6 @@ use crate::new_index::{
 use crate::util::fees::{make_fee_histogram, TxFeeInfo};
 use crate::util::{extract_tx_prevouts, full_hash, has_prevout, is_spendable, Bytes};
 
-#[cfg(feature = "liquid")]
-use crate::elements::asset;
-
 const RECENT_TXS_SIZE: usize = 10;
 const BACKLOG_STATS_TTL: u64 = 10;
 
@@ -43,12 +37,6 @@ pub struct Mempool {
     latency: HistogramVec, // mempool requests latency
     delta: HistogramVec,   // # of added/removed txs
     count: GaugeVec,       // current state of the mempool
-
-    // elements only
-    #[cfg(feature = "liquid")]
-    pub asset_history: HashMap<AssetId, Vec<TxHistoryInfo>>,
-    #[cfg(feature = "liquid")]
-    pub asset_issuance: HashMap<AssetId, asset::AssetRow>,
 }
 
 // A simplified transaction view used for the list of most recent transactions
@@ -57,7 +45,6 @@ pub struct TxOverview {
     txid: Txid,
     fee: u64,
     vsize: u32,
-    #[cfg(not(feature = "liquid"))]
     value: u64,
 }
 
@@ -87,11 +74,6 @@ impl Mempool {
                 MetricOpts::new("mempool_count", "# of elements currently at the mempool"),
                 &["type"],
             ),
-
-            #[cfg(feature = "liquid")]
-            asset_history: HashMap::new(),
-            #[cfg(feature = "liquid")]
-            asset_issuance: HashMap::new(),
         }
     }
 
@@ -178,32 +160,14 @@ impl Mempool {
             .iter()
             .filter_map(|entry| match entry {
                 TxHistoryInfo::Funding(info) => {
-                    // Liquid requires some additional information from the txo that's not available in the TxHistoryInfo index.
-                    #[cfg(feature = "liquid")]
-                    let txo = self
-                        .lookup_txo(&entry.get_funded_outpoint())
-                        .expect("missing txo");
-
                     Some(Utxo {
                         txid: deserialize(&info.txid).expect("invalid txid"),
                         vout: info.vout as u32,
                         value: info.value,
                         confirmed: None,
-
-                        #[cfg(feature = "liquid")]
-                        asset: txo.asset,
-                        #[cfg(feature = "liquid")]
-                        nonce: txo.nonce,
-                        #[cfg(feature = "liquid")]
-                        witness: txo.witness,
                     })
                 }
                 TxHistoryInfo::Spending(_) => None,
-                #[cfg(feature = "liquid")]
-                TxHistoryInfo::Issuing(_)
-                | TxHistoryInfo::Burning(_)
-                | TxHistoryInfo::Pegin(_)
-                | TxHistoryInfo::Pegout(_) => unreachable!(),
             })
             .filter(|utxo| !self.has_spend(&OutPoint::from(utxo)))
             .collect()
@@ -226,32 +190,15 @@ impl Mempool {
             }
 
             match entry {
-                #[cfg(not(feature = "liquid"))]
                 TxHistoryInfo::Funding(info) => {
                     stats.funded_txo_count += 1;
                     stats.funded_txo_sum += info.value;
                 }
 
-                #[cfg(not(feature = "liquid"))]
                 TxHistoryInfo::Spending(info) => {
                     stats.spent_txo_count += 1;
                     stats.spent_txo_sum += info.value;
                 }
-
-                // Elements
-                #[cfg(feature = "liquid")]
-                TxHistoryInfo::Funding(_) => {
-                    stats.funded_txo_count += 1;
-                }
-                #[cfg(feature = "liquid")]
-                TxHistoryInfo::Spending(_) => {
-                    stats.spent_txo_count += 1;
-                }
-                #[cfg(feature = "liquid")]
-                TxHistoryInfo::Issuing(_)
-                | TxHistoryInfo::Burning(_)
-                | TxHistoryInfo::Pegin(_)
-                | TxHistoryInfo::Pegout(_) => unreachable!(),
             };
         }
 
@@ -284,7 +231,7 @@ impl Mempool {
         let old_txids = HashSet::from_iter(self.txstore.keys().cloned());
         let to_remove: HashSet<&Txid> = old_txids.difference(&new_txids).collect();
 
-        // Download and add new transactions from bitcoind's mempool
+        // Download and add new transactions from litecoind's mempool
         let txids: Vec<&Txid> = new_txids.difference(&old_txids).collect();
         let to_add = match daemon.gettransactions(&txids) {
             Ok(txs) => txs,
@@ -357,7 +304,6 @@ impl Mempool {
                 txid,
                 fee: feeinfo.fee,
                 vsize: feeinfo.vsize,
-                #[cfg(not(feature = "liquid"))]
                 value: prevouts.values().map(|prevout| prevout.value).sum(),
             });
 
@@ -407,16 +353,6 @@ impl Mempool {
             for (i, txi) in tx.input.iter().enumerate() {
                 self.edges.insert(txi.previous_output, (txid, i as u32));
             }
-
-            // Index issued assets & native asset pegins/pegouts/burns
-            #[cfg(feature = "liquid")]
-            asset::index_mempool_tx_assets(
-                &tx,
-                self.config.network_type,
-                self.config.parent_network,
-                &mut self.asset_history,
-                &mut self.asset_issuance,
-            );
         }
     }
 
@@ -492,26 +428,8 @@ impl Mempool {
             !entries.is_empty()
         });
 
-        #[cfg(feature = "liquid")]
-        asset::remove_mempool_tx_assets(
-            &to_remove,
-            &mut self.asset_history,
-            &mut self.asset_issuance,
-        );
-
         self.edges
             .retain(|_outpoint, (txid, _vin)| !to_remove.contains(txid));
-    }
-
-    #[cfg(feature = "liquid")]
-    pub fn asset_history(&self, asset_id: &AssetId, limit: usize) -> Vec<Transaction> {
-        let _timer = self
-            .latency
-            .with_label_values(&["asset_history"])
-            .start_timer();
-        self.asset_history
-            .get(asset_id)
-            .map_or_else(|| vec![], |entries| self._history(entries, limit))
     }
 }
 

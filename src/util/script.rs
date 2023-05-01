@@ -1,6 +1,3 @@
-#[cfg(feature = "liquid")]
-use elements::address as elements_address;
-
 use crate::chain::{script, Network, Script, TxIn, TxOut};
 use script::Instruction::PushBytes;
 
@@ -16,23 +13,13 @@ pub trait ScriptToAsm: std::fmt::Debug {
     }
 }
 impl ScriptToAsm for bitcoin::Script {}
-#[cfg(feature = "liquid")]
-impl ScriptToAsm for elements::Script {}
 
 pub trait ScriptToAddr {
     fn to_address_str(&self, network: Network) -> Option<String>;
 }
-#[cfg(not(feature = "liquid"))]
 impl ScriptToAddr for bitcoin::Script {
     fn to_address_str(&self, network: Network) -> Option<String> {
         bitcoin::Address::from_script(self, network.into()).map(|s| s.to_string())
-    }
-}
-#[cfg(feature = "liquid")]
-impl ScriptToAddr for elements::Script {
-    fn to_address_str(&self, network: Network) -> Option<String> {
-        elements_address::Address::from_script(self, None, network.address_params())
-            .map(|a| a.to_string())
     }
 }
 
@@ -54,14 +41,9 @@ pub fn get_innerscripts(txin: &TxIn, prevout: &TxOut) -> InnerScripts {
         || redeem_script.as_ref().map_or(false, |s| s.is_v0_p2wsh())
     {
         let witness = &txin.witness;
-        #[cfg(feature = "liquid")]
-        let witness = &witness.script_witness;
 
         // rust-bitcoin returns witness items as a [u8] slice, while rust-elements returns a Vec<u8>
-        #[cfg(not(feature = "liquid"))]
         let wit_to_vec = Vec::from;
-        #[cfg(feature = "liquid")]
-        let wit_to_vec = Clone::clone;
 
         witness.iter().last().map(wit_to_vec).map(Script::from)
     } else {
