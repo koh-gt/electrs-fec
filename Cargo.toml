@@ -57,9 +57,10 @@ tokio = { version = "1", features = ["sync", "macros"] }
 electrum-client = { version = "0.8", optional = true }
 
 [dependencies.bitcoin]
+git = "https://github.com/rust-litecoin/rust-litecoin.git"
+branch = "ltc"
 version = "0.28"
 features = [ "use-serde" ]
-path = "../rust-bitcoin"
 
 [dev-dependencies]
 tempfile = "3.0"
