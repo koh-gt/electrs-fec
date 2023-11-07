@@ -248,6 +248,9 @@ impl Indexer {
         start_fetcher(self.from, &daemon, to_add)?.map(|blocks| self.add(&blocks));
         self.start_auto_compactions(&self.store.txstore_db);
 
+        self.remove_spent_mw_outputs();
+        self.start_auto_compactions(&self.store.txstore_db);
+
         let to_index = self.headers_to_index(&new_headers);
         debug!(
             "indexing history from {} blocks using {:?}",
@@ -317,6 +320,23 @@ impl Indexer {
             index_blocks(blocks, &previous_txos_map, &self.iconfig)
         };
         self.store.history_db.write(rows, self.flush);
+    }
+
+    fn remove_spent_mw_outputs(&self) {
+        let spent_output_ids: Vec<_> = 
+            self.store.txstore_db.iter_scan(b"MWSO")
+                .map(| row | row.key[4..].to_owned() )
+                .collect();
+        // TODO: bulk operation?
+        for output_id in &spent_output_ids {
+            let key = [ b"MWO", &output_id[..] ].concat();
+            self.store.txstore_db.delete(&key);
+        }
+        // delete all temporary MWSO{output-id} entries
+        for output_id in spent_output_ids {
+            let key = [ b"MWSO", &output_id[..] ].concat();
+            self.store.txstore_db.delete(&key);
+        }
     }
 }
 
@@ -961,6 +981,8 @@ fn add_blocks(block_entries: &[BlockEntry], iconfig: &IndexerConfig) -> Vec<DBRo
     //      B{blockhash} → {header}
     //      X{blockhash} → {txid1}...{txidN}
     //      M{blockhash} → {tx_count}{size}{weight}
+    // MimbleWimble outputs:
+    //      MWO{output-id} → {serialized-output}
     block_entries
         .par_iter() // serialization is CPU-intensive
         .map(|b| {
@@ -980,6 +1002,10 @@ fn add_blocks(block_entries: &[BlockEntry], iconfig: &IndexerConfig) -> Vec<DBRo
                 Some(ref mweb_block) => {
                     for output in mweb_block.tx_body.outputs.as_slice() {
                         rows.push(MWOutputRow::new(output.clone()).into_row());
+                    }
+                    // Save spent output IDs to DB to remove them from saved outputs later
+                    for input in mweb_block.tx_body.inputs.as_slice() {
+                        rows.push(MWSpentOutputRow::new(input.output_id).into_row());
                     }
                 }
                 None => {}
@@ -1540,6 +1566,33 @@ impl MWOutputRow {
     fn from_row(row: DBRow) -> Self {
         MWOutputRow {
             output: bincode::deserialize(&row.value).unwrap(),
+        }
+    }
+}
+
+struct MWSpentOutputRow {
+    output_id: [u8; 32]
+}
+
+impl MWSpentOutputRow {
+    fn new(output_id: [u8; 32]) -> Self {
+        MWSpentOutputRow { output_id }
+    }
+
+    fn get_key(self) -> Vec<u8> {
+        [b"MWSO".to_vec(), self.output_id.to_vec()].concat()
+    }
+
+    fn into_row(self) -> DBRow {
+        DBRow {
+            key: self.get_key(),
+            value: vec! [],
+        }
+    }
+
+    fn from_row(row: DBRow) -> Self {
+        MWSpentOutputRow {
+            output_id: std::convert::TryInto::try_into(row.key).unwrap(),
         }
     }
 }
