@@ -11,11 +11,13 @@ use crate::util::{
 use {bitcoin::consensus::encode, std::str::FromStr};
 
 use bitcoin::blockdata::opcodes;
+use bitcoin::consensus;
 use bitcoin::hashes::hex::{FromHex, ToHex};
 use bitcoin::hashes::Error as HashError;
 use hex::{self, FromHexError};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Response, Server, StatusCode};
+use itertools::Itertools;
 use tokio::sync::oneshot;
 
 use hyperlocal::UnixServerExt;
@@ -860,6 +862,23 @@ fn handle_request(
 
         (&Method::GET, Some(&"fee-estimates"), None, None, None, None) => {
             json_response(query.estimate_fee_map(), TTL_SHORT)
+        }
+
+        (&Method::GET, Some(&"mw-outputs"), Some(scan_master_priv_key), Some(spend_pub_keys_list), None, None) => {
+            let priv_scan_key = std::convert::TryInto::try_into(hex::decode(scan_master_priv_key)?);
+            let spend_pub_keys = 
+                spend_pub_keys_list
+                    .split(",")
+                    .map(| each | { bitcoin::secp256k1::PublicKey::from_str(each).unwrap() })
+                    .collect_vec();
+            let outputs = query.chain().get_mw_outputs(&priv_scan_key.unwrap(), spend_pub_keys);
+            let outputs_serialized = consensus::serialize(&outputs);
+            let body = Body::from(outputs_serialized);
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "application/octet-stream")
+                .body(body)
+                .unwrap())
         }
 
         _ => Err(HttpError::not_found(format!(
