@@ -865,20 +865,35 @@ fn handle_request(
         }
 
         (&Method::GET, Some(&"mw-outputs"), Some(scan_master_priv_key), Some(spend_pub_keys_list), None, None) => {
-            let priv_scan_key = std::convert::TryInto::try_into(hex::decode(scan_master_priv_key)?);
-            let spend_pub_keys = 
+            let maybe_priv_scan_key: Result<[u8; 32], String> = 
+                match hex::decode(scan_master_priv_key) {
+                    Ok(decoded) => 
+                        std::convert::TryInto::<[u8; 32]>::try_into(decoded)
+                            .map_err(| value | format!("couldn't convert {:?} to [u8; 32]", value)),
+                    Err(error) => Err(error.to_string())
+                };
+            let maybe_spend_pub_keys: Result<Vec<bitcoin::secp256k1::PublicKey>, _> = 
                 spend_pub_keys_list
                     .split(",")
-                    .map(| each | { bitcoin::secp256k1::PublicKey::from_str(each).unwrap() })
-                    .collect_vec();
-            let outputs = query.chain().get_mw_outputs(&priv_scan_key.unwrap(), spend_pub_keys);
-            let outputs_serialized = consensus::serialize(&outputs);
-            let body = Body::from(outputs_serialized);
-            Ok(Response::builder()
-                .status(StatusCode::OK)
-                .header("Content-Type", "application/octet-stream")
-                .body(body)
-                .unwrap())
+                    .map(| each | { bitcoin::secp256k1::PublicKey::from_str(each) })
+                    .collect();
+            
+            match (maybe_priv_scan_key, maybe_spend_pub_keys) {
+                (Ok(priv_scan_key), Ok(spend_pub_keys)) => {
+                    let outputs = query.chain().get_mw_outputs(&priv_scan_key, spend_pub_keys);
+                    let outputs_serialized = consensus::serialize(&outputs);
+                    let body = Body::from(outputs_serialized);
+                    Ok(Response::builder()
+                        .status(StatusCode::OK)
+                        .header("Content-Type", "application/octet-stream")
+                        .body(body)
+                        .unwrap())
+                },
+                (Err(_psk_error), _) => 
+                    Err(HttpError(StatusCode::BAD_REQUEST, format!("invalid scan_master_priv_key: {}", scan_master_priv_key))),
+                (_, Err(spend_pub_key_error)) => 
+                    Err(HttpError(StatusCode::BAD_REQUEST, format!("invalid spend_pub_key ({:?})", spend_pub_key_error.to_string())))
+            }
         }
 
         _ => Err(HttpError::not_found(format!(
