@@ -1,9 +1,11 @@
+use bitcoin::blockdata::mimblewimble;
 use bitcoin::hashes::sha256d::Hash as Sha256dHash;
 use bitcoin::util::merkleblock::MerkleBlock;
 use bitcoin::VarInt;
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
 use itertools::Itertools;
+use num_bigint_dig::{self, ModInverse};
 use rayon::prelude::*;
 
 use bitcoin::consensus::encode::{deserialize, serialize};
@@ -246,6 +248,9 @@ impl Indexer {
         start_fetcher(self.from, &daemon, to_add)?.map(|blocks| self.add(&blocks));
         self.start_auto_compactions(&self.store.txstore_db);
 
+        self.remove_spent_mw_outputs();
+        self.start_auto_compactions(&self.store.txstore_db);
+
         let to_index = self.headers_to_index(&new_headers);
         debug!(
             "indexing history from {} blocks using {:?}",
@@ -315,6 +320,23 @@ impl Indexer {
             index_blocks(blocks, &previous_txos_map, &self.iconfig)
         };
         self.store.history_db.write(rows, self.flush);
+    }
+
+    fn remove_spent_mw_outputs(&self) {
+        let spent_output_ids: Vec<_> = 
+            self.store.txstore_db.iter_scan(b"MWSO")
+                .map(| row | row.key[4..].to_owned() )
+                .collect();
+        // TODO: bulk operation?
+        for output_id in &spent_output_ids {
+            let key = [ b"MWO", &output_id[..] ].concat();
+            self.store.txstore_db.delete(&key);
+        }
+        // delete all temporary MWSO{output-id} entries
+        for output_id in spent_output_ids {
+            let key = [ b"MWSO", &output_id[..] ].concat();
+            self.store.txstore_db.delete(&key);
+        }
     }
 }
 
@@ -860,6 +882,76 @@ impl ChainQuery {
             |t| t == txid,
         ))
     }
+
+    /// Get MimbleWimble transaction outputs for given master private scan key
+    /// and spend pub keys.
+    pub fn get_mw_outputs(
+        &self, priv_scan_key: &[u8; 32], 
+        spend_pub_keys: Vec<bitcoin::secp256k1::PublicKey>
+    ) -> Vec<mimblewimble::Output> {
+        self.store.txstore_db.iter_scan(b"MWO")
+            .map(| row | { MWOutputRow::from_row(row).output })
+            .filter(| output | { identify_output(output, priv_scan_key, &spend_pub_keys) })
+            .collect_vec()
+    }
+}
+
+fn identify_output(
+    output: &mimblewimble::Output, 
+    priv_scan_key: &[u8; 32], 
+    spend_pub_keys: &Vec<bitcoin::secp256k1::PublicKey>
+) -> bool {
+    match output.message.standard_fields {
+        Some(ref std_fields) => {
+            let secp = bitcoin::secp256k1::Secp256k1::new();
+            let mut shared_secret = 
+                std_fields.key_exchange_pubkey.clone();
+            shared_secret.mul_assign(&secp, priv_scan_key).unwrap();
+            let mut hasher = blake3::Hasher::new();
+            hasher.update("T".as_bytes());
+            hasher.update(&shared_secret.serialize());
+            let view_tag = hasher.finalize().as_bytes()[0];
+            if view_tag == std_fields.view_tag {
+                // t
+                let ecdhe_shared_secret = {
+                    let mut hasher = blake3::Hasher::new();
+                    hasher.update("D".as_bytes());
+                    hasher.update(&shared_secret.serialize());
+                    hasher.finalize()
+                };
+
+                // B_i
+                let spend_pub_key: bitcoin::secp256k1::PublicKey = {
+                    let mut hasher = blake3::Hasher::new();
+                    hasher.update("O".as_bytes());
+                    hasher.update(ecdhe_shared_secret.as_bytes());
+                    let t_hashed = hasher.finalize();
+                    // secp256k1 scalar order
+                    let scalar_order = 
+                        num_bigint_dig::BigUint::parse_bytes(
+                            b"fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141",
+                            16)
+                            .unwrap();
+                    let (_, t_inverse) = 
+                        num_bigint_dig::BigUint::from_bytes_be(t_hashed.as_bytes())
+                            .mod_inverse(scalar_order)
+                            .unwrap()
+                            .to_bytes_be();
+                    let mut result = output.receiver_public_key.clone();
+                    result
+                        .mul_assign(&secp, &t_inverse[..])
+                        .unwrap();
+                    result
+                };
+
+                return spend_pub_keys.contains(&spend_pub_key);
+            }
+            else {
+                return false;
+            }
+        }
+        None => { return false }
+    }
 }
 
 fn load_blockhashes(db: &DB, prefix: &[u8]) -> HashSet<BlockHash> {
@@ -889,6 +981,8 @@ fn add_blocks(block_entries: &[BlockEntry], iconfig: &IndexerConfig) -> Vec<DBRo
     //      B{blockhash} → {header}
     //      X{blockhash} → {txid1}...{txidN}
     //      M{blockhash} → {tx_count}{size}{weight}
+    // MimbleWimble outputs:
+    //      MWO{output-id} → {serialized-output}
     block_entries
         .par_iter() // serialization is CPU-intensive
         .map(|b| {
@@ -902,6 +996,19 @@ fn add_blocks(block_entries: &[BlockEntry], iconfig: &IndexerConfig) -> Vec<DBRo
             if !iconfig.light_mode {
                 rows.push(BlockRow::new_txids(blockhash, &txids).into_row());
                 rows.push(BlockRow::new_meta(blockhash, &BlockMeta::from(b)).into_row());
+            }
+
+            match b.block.mweb_block {
+                Some(ref mweb_block) => {
+                    for output in mweb_block.tx_body.outputs.as_slice() {
+                        rows.push(MWOutputRow::new(output.clone()).into_row());
+                    }
+                    // Save spent output IDs to DB to remove them from saved outputs later
+                    for input in mweb_block.tx_body.inputs.as_slice() {
+                        rows.push(MWSpentOutputRow::new(input.output_id).into_row());
+                    }
+                }
+                None => {}
             }
 
             rows.push(BlockRow::new_header(&b).into_row());
@@ -1434,6 +1541,72 @@ impl TxEdgeRow {
             key: bincode::deserialize(&row.key).expect("failed to deserialize TxEdgeKey"),
         }
     }
+}
+
+struct MWOutputRow {
+    output: mimblewimble::Output
+}
+
+impl MWOutputRow {
+    fn new(output: mimblewimble::Output) -> Self {
+        MWOutputRow { output: output }
+    }
+
+    fn get_key(hash: blake3::Hash) -> Vec<u8> {
+        [b"MWO".to_vec(), hash.as_bytes().to_vec()].concat()
+    }
+
+    fn into_row(self) -> DBRow {
+        DBRow {
+            key: MWOutputRow::get_key(get_output_id(&self.output)),
+            value: bincode::serialize(&self.output).expect("failed to deserialize MWOutputRow"),
+        }
+    }
+
+    fn from_row(row: DBRow) -> Self {
+        MWOutputRow {
+            output: bincode::deserialize(&row.value).unwrap(),
+        }
+    }
+}
+
+struct MWSpentOutputRow {
+    output_id: [u8; 32]
+}
+
+impl MWSpentOutputRow {
+    fn new(output_id: [u8; 32]) -> Self {
+        MWSpentOutputRow { output_id }
+    }
+
+    fn get_key(self) -> Vec<u8> {
+        [b"MWSO".to_vec(), self.output_id.to_vec()].concat()
+    }
+
+    fn into_row(self) -> DBRow {
+        DBRow {
+            key: self.get_key(),
+            value: vec! [],
+        }
+    }
+
+    fn from_row(row: DBRow) -> Self {
+        MWSpentOutputRow {
+            output_id: std::convert::TryInto::try_into(row.key).unwrap(),
+        }
+    }
+}
+
+fn get_output_id(output: &mimblewimble::Output) -> blake3::Hash {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(&output.commitment);
+    hasher.update(&output.sender_public_key.serialize());
+    hasher.update(&output.receiver_public_key.serialize());
+    let message_hash = blake3::hash(serialize(&output.message).as_slice());
+    hasher.update(message_hash.as_bytes());
+    hasher.update(blake3::hash(&output.range_proof).as_bytes());
+    hasher.update(&output.signature);
+    return hasher.finalize();
 }
 
 #[derive(Serialize, Deserialize)]

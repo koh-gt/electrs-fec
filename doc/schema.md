@@ -41,6 +41,12 @@ When the indexer is synced up to the tip of the chain, the hash of the tip is sa
 
  * `"t" →  "{blockhash}"`
 
+ Each MimbleWimble output results in following new row:
+
+ * `"MWO{output-id}" → "{serialized-output}"`
+
+ Spent outputs are then removed, so only unspent outputs are left in DB.
+
 ### `history`
 
 Each funding output (except for provably unspendable ones when `--index-unspendables` is not enabled) results in the following new rows (`H` is for history, `F` is for funding):

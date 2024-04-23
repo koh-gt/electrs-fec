@@ -196,6 +196,10 @@ impl DB {
         self.db.get(key).unwrap().map(|v| v.to_vec())
     }
 
+    pub fn delete(&self, key: &[u8]) {
+        self.db.delete(key).unwrap();
+    }
+
     fn verify_compatibility(&self, config: &Config) {
         let mut compatibility_bytes = bincode::serialize(&DB_VERSION).unwrap();
 
