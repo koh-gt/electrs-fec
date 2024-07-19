@@ -10,12 +10,11 @@ Documentation for the database schema and indexing process [is available here](d
 
 ### Installing & indexing
 
-Install Rust, Bitcoin Core (no `txindex` needed) and the `clang` and `cmake` packages, then:
+Install Rust, Ferrite Core (no `txindex` needed) and the `clang` and `cmake` packages, then:
 
 ```bash
-$ git clone https://github.com/blockstream/electrs && cd electrs
-$ git checkout new-index
-$ cargo run --release --bin electrs -- -vvvv --daemon-dir ~/.bitcoin
+$ git clone https://github.com/koh-gt/electrs-fec && cd electrs-fec
+$ cargo run --release --bin electrs-fec -- -vvvv --daemon-dir ~/.ferrite
 
 # Or for liquid:
 $ cargo run --features liquid --release --bin electrs -- -vvvv --network liquid --daemon-dir ~/.liquid
