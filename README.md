@@ -10,12 +10,11 @@ Documentation for the database schema and indexing process [is available here](d
 
 ### Installing & indexing
 
-Install Rust, Bitcoin Core (no `txindex` needed) and the `clang` and `cmake` packages, then:
+Install Rust, Ferrite Core (no `txindex` needed) and the `clang` and `cmake` packages, then:
 
 ```bash
-$ git clone https://github.com/blockstream/electrs && cd electrs
-$ git checkout new-index
-$ cargo run --release --bin electrs -- -vvvv --daemon-dir ~/.bitcoin
+$ git clone https://github.com/koh-gt/electrs-fec && cd electrs-fec
+$ cargo run --release --bin electrs -- -vvvv --daemon-dir ~/.ferrite
 
 # Or for liquid:
 $ cargo run --features liquid --release --bin electrs -- -vvvv --network liquid --daemon-dir ~/.liquid
@@ -37,7 +36,7 @@ by roughly 50% at the cost of slower and more expensive lookups.
 
 With this option set, raw transactions and metadata associated with blocks will not be kept in rocksdb
 (the `T`, `X` and `M` indexes),
-but instead queried from ferrited on demand.
+but instead queried from litecoind on demand.
 
 ### Notable changes from Electrs:
 
@@ -52,7 +51,7 @@ but instead queried from ferrited on demand.
   - A map of blockhash to txids is kept in the database under the prefix `X`.
   - Block stats metadata (number of transactions, size and weight) is kept in the database under the prefix `M`.
 
-  With these new indexes, ferrited is no longer queried to serve user requests and is only polled
+  With these new indexes, litecoind is no longer queried to serve user requests and is only polled
   periodically for new blocks and for syncing the mempool.
 
 - Support for Liquid and other Elements-based networks, including CT, peg-in/out and multi-asset.
