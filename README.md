@@ -27,7 +27,7 @@ sudo apt install cmake
 ```
 
 ```bash
-$ git clone https://github.com/koh-gt/electrs-fec && cd electrs-fec
+$ git clone https://github.com/ferritecoin/electrs-fec && cd electrs-fec
 $ cargo run --release --bin electrs -- -vvvv --daemon-dir ~/.ferrite
 
 # Or for liquid:
