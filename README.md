@@ -14,6 +14,11 @@ Uses [rust-ferrite](https://github.com/ferritecoin/rust-ferrite) `master` branch
 
 #### Install Rust, Ferrite Core (no `txindex` needed) and the `clang` and `cmake` packages, then:
 ```
+# to install rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+# if you dont have curl
+
+
 sudo apt install cargo
 
 # if you hadn't already...
@@ -26,6 +31,28 @@ $ git clone https://github.com/koh-gt/electrs-fec && cd electrs-fec
 $ cargo run --release --bin electrs -- -vvvv --daemon-dir ~/.ferrite
 
 # Or for liquid:
+$ cargo run --features liquid --release --bin electrs -- -vvvv --network liquid --daemon-dir ~/.liquid
+```
+
+#### Known issues
+```
+error[E0599]: no method named `emit_rerun_if_env_changed` found for struct `Build` in the current scope
+   --> /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/blake3-1.5.3/build.rs:104:11
+    |
+104 |     build.emit_rerun_if_env_changed(false);
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^ method not found in `Build`
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `blake3` (build script) due to previous error
+warning: build failed, waiting for other jobs to finish...
+```
+```bash
+# Open your Cargo.toml file and ensure the cc dependency is set to a version that includes the emit_rerun_if_env_changed method:
+[build-dependencies]
+cc = "1.0.72"
+# then
+$ cargo update
+# and retry
 $ cargo run --features liquid --release --bin electrs -- -vvvv --network liquid --daemon-dir ~/.liquid
 ```
 
