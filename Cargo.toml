@@ -59,8 +59,8 @@ tokio = { version = "1", features = ["sync", "macros"] }
 electrum-client = { version = "0.8", optional = true }
 
 [dependencies.bitcoin]
-git = "https://github.com/rust-litecoin/rust-litecoin.git"
-branch = "ltc"
+git = "https://github.com/ferritecoin/rust-ferrite.git"
+branch = "master"
 version = "0.28"
 features = [ "use-serde" ]
 
