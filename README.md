@@ -17,7 +17,7 @@ Uses [rust-ferrite](https://github.com/ferritecoin/rust-ferrite) `master` branch
 # to install rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 # if you dont have curl
-
+sudo apt-get install curl  # do not use snap - if you did, use    sudo snap remove curl 
 
 sudo apt install cargo
 
@@ -28,6 +28,7 @@ sudo apt install cmake
 
 ```bash
 $ git clone https://github.com/ferritecoin/electrs-fec && cd electrs-fec
+$ cargo update   # important!
 $ cargo run --release --bin electrs -- -vvvv --daemon-dir ~/.ferrite
 
 # Or for liquid:
