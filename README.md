@@ -8,9 +8,18 @@ API documentation [is available here](https://github.com/blockstream/esplora/blo
 
 Documentation for the database schema and indexing process [is available here](doc/schema.md).
 
+Uses [rust-ferrite](https://github.com/ferritecoin/rust-ferrite) `master` branch.
+
 ### Installing & indexing
 
-Install Rust, Ferrite Core (no `txindex` needed) and the `clang` and `cmake` packages, then:
+#### Install Rust, Ferrite Core (no `txindex` needed) and the `clang` and `cmake` packages, then:
+```
+sudo apt install cargo
+
+# if you hadn't already...
+sudo apt install clang
+sudo apt install cmake
+```
 
 ```bash
 $ git clone https://github.com/koh-gt/electrs-fec && cd electrs-fec
