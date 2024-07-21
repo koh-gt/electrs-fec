@@ -29,7 +29,7 @@ sudo apt install cmake
 ```bash
 $ git clone https://github.com/ferritecoin/electrs-fec && cd electrs-fec
 $ cargo update   # important!
-$ cargo run --release --bin electrs -- -vvvv --daemon-dir ~/.ferrite --cookie user:password --daemon-rpc-addr 127.0.0.1:9573
+$ cargo run --release --bin electrs -- -vvvv --daemon-dir ~/.ferrite --cookie user:password --daemon-rpc-addr 127.0.0.1:9573 --jsonrpc-import
 or alternatively $ cargo run --release --bin electrs -- -vvvv --daemon-dir ~/.ferrite
 
 # Or for liquid:
@@ -57,7 +57,7 @@ cc = "1.0.72"
 # then
 $ cargo update
 # and retry
-$ cargo run --features liquid --release --bin electrs -- -vvvv --network liquid --daemon-dir ~/.liquid
+$ cargo run --release --bin electrs -- -vvvv --daemon-dir ~/.ferrite --cookie user:password --daemon-rpc-addr 127.0.0.1:9573 --jsonrpc-import
 ```
 ### RPC Errors
 #### failed to read cookie
@@ -66,15 +66,19 @@ WARN - reconnecting to ferrited: failed to read cookie from "/home/ubuntu/.ferri
 ```
 ```bash
 # Assuming your RPC username is "user" and RPC password is "password" without the two enclosing double quotation marks.
-
-$ cargo run --release --bin electrs -- -vvvv --daemon-dir ~/.ferrite --cookie user:password --daemon-rpc-addr 127.0.0.1:9573
-
+# use --cookie user:password
 ```
 #### No reply from daemon
 ```
 WARN - reconnecting to ferrited: no reply from daemon
-# from debug.log
 ThreadRPCServer incorrect password attempt from 127.0.0.1:56148
+# from debug.log
+# use --daemon-rpc-addr 127.0.0.1:9573
+```
+#### Failed to index blocks
+```
+thread 'blkfiles_fetcher' panicked at 'failed to index 1068560 blocks from blk*.dat files'
+# use --jsonrpc-import
 ```
 
 See [electrs's original documentation](https://github.com/romanz/electrs/blob/master/doc/usage.md) for more detailed instructions.
