@@ -29,13 +29,16 @@ sudo apt install cmake
 ```bash
 $ git clone https://github.com/ferritecoin/electrs-fec && cd electrs-fec
 $ cargo update   # important!
-$ cargo run --release --bin electrs -- -vvvv --daemon-dir ~/.ferrite
+$ cargo run --release --bin electrs -- -vvvv --daemon-dir ~/.ferrite --cookie user:password --daemon-rpc-addr 127.0.0.1:9573
+or alternatively $ cargo run --release --bin electrs -- -vvvv --daemon-dir ~/.ferrite
 
 # Or for liquid:
 $ cargo run --features liquid --release --bin electrs -- -vvvv --network liquid --daemon-dir ~/.liquid
 ```
 
-#### Known issues
+## Known issues
+### Build Errors
+#### No method named `emit_rerun_if_env_changed`
 ```
 error[E0599]: no method named `emit_rerun_if_env_changed` found for struct `Build` in the current scope
    --> /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/blake3-1.5.3/build.rs:104:11
@@ -55,6 +58,23 @@ cc = "1.0.72"
 $ cargo update
 # and retry
 $ cargo run --features liquid --release --bin electrs -- -vvvv --network liquid --daemon-dir ~/.liquid
+```
+### RPC Errors
+#### failed to read cookie
+```
+WARN - reconnecting to ferrited: failed to read cookie from "/home/ubuntu/.ferrite/.cookie"
+```
+```bash
+# Assuming your RPC username is "user" and RPC password is "password" without the two enclosing double quotation marks.
+
+$ cargo run --release --bin electrs -- -vvvv --daemon-dir ~/.ferrite --cookie user:password --daemon-rpc-addr 127.0.0.1:9573
+
+```
+#### No reply from daemon
+```
+WARN - reconnecting to ferrited: no reply from daemon
+# from debug.log
+ThreadRPCServer incorrect password attempt from 127.0.0.1:56148
 ```
 
 See [electrs's original documentation](https://github.com/romanz/electrs/blob/master/doc/usage.md) for more detailed instructions.
