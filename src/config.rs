@@ -214,16 +214,16 @@ impl Config {
             Network::Signet => 39573,
         };
         let default_electrum_port = match network_type {
-            Network::Bitcoin => 50001,
-            Network::Testnet => 60001,
-            Network::Regtest => 60401,
-            Network::Signet => 60601,
+            Network::Bitcoin => 50011,
+            Network::Testnet => 60011,
+            Network::Regtest => 60411,
+            Network::Signet => 60611,
         };
         let default_http_port = match network_type {
-            Network::Bitcoin => 3000,
-            Network::Testnet => 3001,
-            Network::Regtest => 3002,
-            Network::Signet => 3003,
+            Network::Bitcoin => 3010,
+            Network::Testnet => 3011,
+            Network::Regtest => 3012,
+            Network::Signet => 3013,
         };
         let default_monitoring_port = match network_type {
             Network::Bitcoin => 4224,
