@@ -80,6 +80,22 @@ ThreadRPCServer incorrect password attempt from 127.0.0.1:56148
 thread 'blkfiles_fetcher' panicked at 'failed to index 1068560 blocks from blk*.dat files'
 # use --jsonrpc-import
 ```
+### Server errors
+#### Address in use
+```
+INFO - REST server running on 127.0.0.1:3000
+thread 'acceptor' panicked at src/util/mod.rs:128:39:
+cannot bind: Os { code: 98, kind: AddrInUse, message: "Address already in use" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+Aborted (core dumped)
+
+# this means that there is already a service running on the local port 3000.
+# You can change the port in electrs-fec/src/config.rs (already changed)
+Network::Bitcoin => 3011,
+Network::Bitcoin => 50011,
+
+```
+
 
 See [electrs's original documentation](https://github.com/romanz/electrs/blob/master/doc/usage.md) for more detailed instructions.
 Note that our indexes are incompatible with electrs's and has to be created separately.
